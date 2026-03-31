@@ -1,0 +1,11 @@
+# Secrets - never commit
+secrets/*
+!secrets/.gitkeep
+!secrets/mullvad-wg.conf.example
+
+# Nix build artifacts
+result
+result-*
+
+# macOS
+.DS_Store
