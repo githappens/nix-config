@@ -55,13 +55,14 @@ Paste your Mullvad config into `secrets/mullvad-wg.conf`. This file is gitignore
 ```
 
 This will:
-1. Create a Parallels VM (4 CPU, 8GB RAM, 15GB disk, no mic/camera)
-2. Boot the NixOS installer ISO
-3. Auto-detect the VM IP and install NixOS via nixos-anywhere
-4. Generate an SSH deploy key (stored in `secrets/vm-ssh-key`, gitignored)
-5. Disconnect the ISO and boot from disk
+1. Create a Parallels VM (4 CPU, 8GB RAM, 15GB disk)
+2. Apply privacy hardening (isolate VM, disable camera/printer/clipboard/cloud/app sharing)
+3. Boot the NixOS installer ISO
+4. Auto-detect the VM IP and install NixOS via nixos-anywhere
+5. Generate an SSH deploy key (stored in `secrets/vm-ssh-key`, gitignored)
+6. Disconnect the ISO, create a clean snapshot, and enable rollback mode
 
-The only manual step is setting `sudo passwd` in the VM console when prompted (NixOS installer requires this before SSH access). If the disk isn't `/dev/sda`, update `disko/mullvad-vm.nix` before running create.
+The only manual steps are setting `sudo passwd` in the VM console when prompted (NixOS installer requires this before SSH access), and verifying camera/microphone are off in the GUI afterwards. If the disk isn't `/dev/sda`, update `disko/mullvad-vm.nix` before running create.
 
 ### Step 4: Verify
 
@@ -69,26 +70,23 @@ The VM should boot into sway with Mullvad Browser in a floating window. Navigate
 
 Login credentials: `user` / `changeme`
 
+## Ephemeral mode
+
+The VM runs in Parallels **Rollback Mode** — every shutdown reverts it to the last clean snapshot. Browser history, downloads, cookies, and any other state are wiped automatically. This is by design for privacy.
+
+Rollback Mode is enabled automatically via `--undo-disks discard` after the initial install. The `update` command creates a new clean snapshot after each update.
+
 ## Updating
-
-To update both NixOS (flake inputs) and Mullvad Browser to the latest versions:
-
-```bash
-./scripts/manage-mullvad-vm.sh update <vm-ip>
-```
-
-Or let the script auto-detect the IP (requires the VM to be running):
 
 ```bash
 ./scripts/manage-mullvad-vm.sh update
 ```
 
-You can also set `MULLVAD_VM_IP` in your environment to skip passing the IP each time.
-
 This will:
 1. Update `flake.lock` to the latest nixpkgs
 2. Check for a new Mullvad Browser alpha and update the hash in `pkgs/mullvad-browser.nix`
-3. Rsync the config to the VM and run `nixos-rebuild switch`
+3. Stop the VM, disable rollback mode (`--undo-disks off`), deploy via `nixos-rebuild switch`
+4. Create a new clean snapshot and re-enable rollback mode (`--undo-disks discard`)
 
 ## Day-to-day usage
 
