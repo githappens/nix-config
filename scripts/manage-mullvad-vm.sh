@@ -100,10 +100,20 @@ create_vm() {
   prlctl set "$VM_NAME" --memsize "$RAM" --cpus "$CPUS"
   prlctl set "$VM_NAME" --device-set net0 --type shared
   prlctl set "$VM_NAME" --on-window-close shutdown
-  prlctl set "$VM_NAME" --camera-sharing off 2>/dev/null || true
-  prlctl set "$VM_NAME" --microphone-sharing off 2>/dev/null || true
 
-  echo ""
+  # Privacy hardening
+  prlctl set "$VM_NAME" --isolate-vm on
+  prlctl set "$VM_NAME" --auto-share-camera off
+  prlctl set "$VM_NAME" --auto-share-bluetooth off 2>/dev/null || true
+  prlctl set "$VM_NAME" --auto-share-smart-card off 2>/dev/null || true
+  prlctl set "$VM_NAME" --device-set sound0 --input disabled 2>/dev/null || true
+  prlctl set "$VM_NAME" --sync-host-printers off
+  prlctl set "$VM_NAME" --shared-clipboard off
+  prlctl set "$VM_NAME" --shared-cloud off
+  prlctl set "$VM_NAME" --sh-app-host-to-guest off
+  prlctl set "$VM_NAME" --sh-app-guest-to-host off
+  prlctl set "$VM_NAME" --shared-profile off
+
   echo "==> Starting VM with NixOS installer ISO..."
   prlctl start "$VM_NAME"
 
@@ -163,7 +173,18 @@ install_nixos() {
   prlctl set "$VM_NAME" --device-set cdrom0 --disconnect
   prlctl start "$VM_NAME"
 
-  echo "==> VM is booting from disk."
+  echo "==> Creating clean snapshot..."
+  sleep 15
+  prlctl stop "$VM_NAME" --kill 2>/dev/null || true
+  prlctl snapshot "$VM_NAME" --name "clean" --description "Post-install baseline."
+  prlctl set "$VM_NAME" --undo-disks discard
+
+  echo ""
+  echo "==> Done. Verify in the GUI that Camera and Microphone sharing are off:"
+  echo "    Parallels Desktop → right-click '$VM_NAME' → Configure → Hardware"
+  echo ""
+  echo "    prlctl start $VM_NAME"
+  echo ""
   echo "    Login: user / changeme"
   echo "    Updates: ./scripts/manage-mullvad-vm.sh update"
 }
@@ -232,12 +253,9 @@ resolve_vm_ip() {
 }
 
 update_vm() {
-  local vm_ip
-  vm_ip=$(resolve_vm_ip "${1:-}")
-
   ensure_ssh_key
 
-  echo "==> Updating Mullvad VM at $vm_ip"
+  echo "==> Updating Mullvad VM"
   echo ""
 
   # Step 1: Update flake inputs
@@ -249,9 +267,27 @@ update_vm() {
   echo ""
   update_browser || true
 
-  # Step 3: Deploy to VM
+  # Step 3: Disable rollback so changes persist, then start VM
   echo ""
-  echo "==> Deploying to VM..."
+  echo "==> Disabling rollback mode for update..."
+  prlctl set "$VM_NAME" --undo-disks off
+
+  # Start VM if not running
+  local vm_status
+  vm_status=$(prlctl list "$VM_NAME" --full --json 2>/dev/null \
+    | grep -o '"status":[ ]*"[^"]*"' | head -1 \
+    | sed 's/.*"status":[ ]*"\([^"]*\)".*/\1/') || true
+  if [ "$vm_status" != "running" ]; then
+    echo "==> Starting VM..."
+    prlctl start "$VM_NAME"
+    sleep 10
+  fi
+
+  local vm_ip
+  vm_ip=$(resolve_vm_ip "${1:-}")
+
+  # Step 4: Deploy to VM
+  echo "==> Deploying to VM at $vm_ip..."
   local ssh_opts="-i $SSH_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
   rsync -avz -e "ssh $ssh_opts" --exclude='.git' --exclude='secrets' \
@@ -266,10 +302,30 @@ update_vm() {
   ssh $ssh_opts "user@${vm_ip}" \
     "sudo nixos-rebuild switch --flake /tmp/nix-config#mullvad-vm && sudo rm -rf /tmp/nix-config"
 
+  # Step 5: Stop VM, replace snapshot
   echo ""
-  echo "==> Update complete. Restarting VM..."
+  echo "==> Replacing clean snapshot..."
   prlctl stop "$VM_NAME" --kill 2>/dev/null || true
+
+  local old_snapshot
+  old_snapshot=$(get_snapshot_id)
+  if [ -n "$old_snapshot" ]; then
+    prlctl snapshot-delete "$VM_NAME" --id "$old_snapshot"
+  fi
+
+  prlctl snapshot "$VM_NAME" --name "clean" --description "Post-update baseline. VM reverts here on stop."
+  prlctl set "$VM_NAME" --undo-disks discard
   prlctl start "$VM_NAME"
+
+  echo "==> Update complete."
+}
+
+get_snapshot_id() {
+  # Snapshot IDs are JSON keys like "{c1f879ff-...}"
+  prlctl snapshot-list "$VM_NAME" --json 2>/dev/null \
+    | grep -o '"{[^"]*}"' \
+    | head -1 \
+    | tr -d '"' || true
 }
 
 case "${1:-create}" in
@@ -277,7 +333,7 @@ case "${1:-create}" in
   install) install_nixos "${2:?Usage: $0 install <vm-ip>}" ;;
   update)  update_vm "${2:-}" ;;
   *)
-    echo "Usage: $0 [create|install <vm-ip>|update [<vm-ip>]]"
+    echo "Usage: $0 [create|install <vm-ip>|update]"
     exit 1
     ;;
 esac
