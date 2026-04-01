@@ -8,7 +8,7 @@ NixOS VM and host configurations.
 
 ## Architecture
 
-The mullvad-vm is a minimal NixOS VM running inside Parallels on Apple Silicon. It has no desktop environment — just cage (a Wayland kiosk compositor) launching Mullvad Browser fullscreen. All traffic goes through a WireGuard full tunnel to Mullvad VPN. DNS resolves through Mullvad's DNS server (`10.64.0.1`) inside the tunnel.
+The mullvad-vm is a minimal NixOS VM running inside Parallels on Apple Silicon. Sway (a minimal Wayland compositor) launches Mullvad Browser in a floating window at its default letterboxed size for fingerprint resistance. All traffic goes through a WireGuard full tunnel to Mullvad VPN. DNS resolves through Mullvad's DNS server (`10.64.0.1`) inside the tunnel.
 
 Display auto-resize is handled by a custom systemd service that polls the `virtio_gpu` mode list and applies changes via `wlr-randr` — no Parallels Tools kernel modules required.
 
@@ -17,8 +17,8 @@ Host (macOS)
 └── Parallels (shared/NAT networking)
     └── mullvad-vm (NixOS, aarch64-linux)
         ├── WireGuard full tunnel → Mullvad VPN
-        ├── cage (Wayland kiosk)
-        └── Mullvad Browser (fullscreen)
+        ├── sway (minimal Wayland compositor)
+        └── Mullvad Browser (floating, letterboxed)
 ```
 
 ## Setup guide
@@ -65,7 +65,7 @@ The only manual step is setting `sudo passwd` in the VM console when prompted (N
 
 ### Step 4: Verify
 
-The VM should boot into Mullvad Browser fullscreen. Navigate to https://mullvad.net/en/check — it should show your Mullvad exit IP, not your real IP.
+The VM should boot into sway with Mullvad Browser in a floating window. Navigate to https://mullvad.net/en/check — it should show your Mullvad exit IP, not your real IP.
 
 Login credentials: `user` / `changeme`
 
@@ -95,17 +95,17 @@ This will:
 ```bash
 prlctl start mullvad-vm        # Start the VM
 prlctl stop mullvad-vm         # Stop the VM
-ssh user@<vm-ip>               # SSH in for troubleshooting
+ssh -i secrets/vm-ssh-key user@<vm-ip>  # SSH in for troubleshooting
 ```
 
 ## Troubleshooting
 
 **WireGuard tunnel not coming up:** SSH in, check `sudo systemctl status wg-quick-wg0`. Verify `secrets/mullvad-wg.conf` is correct.
 
-**Cage doesn't start / black screen:** SSH in, check `journalctl -u cage-tty1`. May need to verify Parallels GPU acceleration is working.
+**Sway doesn't start / black screen:** SSH in, check `journalctl -u getty@tty1`. Verify the login shell init is launching sway.
 
 **Display not resizing:** Check `systemctl status display-autoresize`. The service polls `/sys/class/drm/card1-Virtual-1/modes` and applies changes via `wlr-randr`.
 
-**No cursor:** The VM uses software cursors (`WLR_NO_HARDWARE_CURSORS=1`). If the cursor disappears, restart the cage service: `sudo systemctl restart cage-tty1`.
+**No cursor:** The VM uses software cursors (`WLR_NO_HARDWARE_CURSORS=1`). If the cursor disappears, reboot the VM.
 
 **Wrong disk device:** If `nixos-anywhere` fails during partitioning, boot the ISO again, run `lsblk`, and update `device` in `disko/mullvad-vm.nix`.
