@@ -1,40 +1,103 @@
 # Mullvad Browser kiosk VM.
-# WireGuard full tunnel to Mullvad VPN, Mullvad Browser in cage (Wayland kiosk).
-# No desktop environment, no shared folders needed.
+# WireGuard full tunnel to Mullvad VPN, Mullvad Browser in sway (minimal Wayland).
+# Mullvad Browser runs in a floating window at its default letterboxed size
+# to avoid screen-size fingerprinting.
 { config, pkgs, lib, ... }:
 let
-  # Parse the WireGuard config from the secrets file.
-  # Expected format: standard wg-quick INI (see secrets/mullvad-wg.conf.example).
   wgConf = "/etc/mullvad-wg/wg0.conf";
+
+  swayConfig = pkgs.writeText "sway-config" ''
+    # Minimal sway config for Mullvad Browser kiosk
+    # Use virtio_gpu output
+    output Virtual-1 resolution 1920x1080
+
+    # All windows float by default — lets Mullvad Browser use its
+    # built-in letterboxing for fingerprint resistance.
+    for_window [app_id=".*"] floating enable
+
+    # Dark background
+    output * bg #1a1a2e solid_color
+
+    # Cursor theme
+    seat seat0 xcursor_theme Adwaita 24
+
+    # Launch Mullvad Browser; exit sway when it closes
+    exec mullvad-browser; swaymsg exit
+  '';
+
+  sway-kiosk = pkgs.writeShellScript "sway-kiosk" ''
+    export XDG_SESSION_TYPE=wayland
+    export WLR_NO_HARDWARE_CURSORS=1
+    export XCURSOR_THEME=Adwaita
+    export XCURSOR_SIZE=24
+    export XCURSOR_PATH=/run/current-system/sw/share/icons
+    export MOZ_ENABLE_WAYLAND=1
+    exec ${pkgs.sway}/bin/sway --config ${swayConfig}
+  '';
 in {
   networking.hostName = "mullvad-vm";
 
   # ── WireGuard full tunnel ───────────────────────────────────────
-  # Use wg-quick with the config file directly — avoids parsing
-  # individual fields in Nix and lets you paste Mullvad's config as-is.
   networking.wg-quick.interfaces.wg0 = {
     configFile = wgConf;
     autostart = true;
   };
 
-  # Deploy the secret WireGuard config at build time.
-  # The file is read from secrets/mullvad-wg.conf (gitignored).
-  environment.etc."mullvad-wg/wg0.conf" = {
-    source = ../secrets/mullvad-wg.conf;
-    mode = "0600";
-  };
+  # The WireGuard config is deployed via nixos-anywhere --extra-files,
+  # not through the Nix store (keeps secrets out of the world-readable store).
+  # See manage-mullvad-vm.sh for the copy step.
 
   # ── DNS ─────────────────────────────────────────────────────────
-  # Force Mullvad DNS through the tunnel. The wg-quick DNS directive
-  # handles this at runtime, but we also set it here as a fallback.
   networking.nameservers = [ "10.64.0.1" ];
 
-  # ── Mullvad Browser (cage kiosk) ───────────────────────────────
-  # Cage: Wayland kiosk compositor — runs one app fullscreen, nothing else.
-  services.cage = {
-    enable = true;
-    user = "user";
-    program = "${pkgs.mullvad-browser}/bin/mullvad-browser";
+  # ── Sway (minimal Wayland compositor) ──────────────────────────
+  # Sway instead of Cage so Mullvad Browser can use its default
+  # letterboxed window size for fingerprint resistance.
+  programs.sway.enable = true;
+
+  # Auto-login and launch sway on tty1
+  services.getty.autologinUser = "user";
+  environment.loginShellInit = ''
+    if [ "$(tty)" = "/dev/tty1" ] && [ -z "$WAYLAND_DISPLAY" ]; then
+      exec ${sway-kiosk}
+    fi
+  '';
+
+  # ── Auto-resize display ────────────────────────────────────────
+  # Parallels updates the first mode in /sys/class/drm/card1-Virtual-1/modes
+  # when the host window is resized. This service polls for changes and
+  # applies them via wlr-randr. The browser stays at its letterboxed size.
+  systemd.services.display-autoresize = {
+    description = "Auto-resize sway display to match Parallels window";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "getty@tty1.service" ];
+    serviceConfig = {
+      ExecStartPre = "${pkgs.coreutils}/bin/sleep 5";
+      ExecStart = let script = pkgs.writeShellScript "display-autoresize" ''
+        export XDG_RUNTIME_DIR=/run/user/1000
+        # Find the active wayland socket
+        for s in wayland-0 wayland-1 wayland-2; do
+          if [ -S "$XDG_RUNTIME_DIR/$s" ]; then
+            export WAYLAND_DISPLAY="$s"
+            break
+          fi
+        done
+        MODES_FILE="/sys/class/drm/card1-Virtual-1/modes"
+        LAST=""
+        while true; do
+          MODE=$(head -1 "$MODES_FILE" 2>/dev/null)
+          if [ -n "$MODE" ] && [ "$MODE" != "$LAST" ]; then
+            ${pkgs.wlr-randr}/bin/wlr-randr --output Virtual-1 --custom-mode "$MODE"
+            LAST="$MODE"
+          fi
+          sleep 1
+        done
+      '';
+      in "${script}";
+      User = "user";
+      Restart = "always";
+      RestartSec = 3;
+    };
   };
 
   # ── User ────────────────────────────────────────────────────────
@@ -45,14 +108,17 @@ in {
   };
 
   # ── Firewall ────────────────────────────────────────────────────
-  # Allow WireGuard UDP out, then let the tunnel carry everything.
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [ ];
+    allowedTCPPorts = [ 22 ];
     allowedUDPPorts = [ ];
-    # wg-quick manages the routing table; the firewall just needs
-    # to not block the tunnel establishment.
     trustedInterfaces = [ "wg0" ];
+  };
+
+  # ── SSH (for remote nixos-rebuild) ──────────────────────────────
+  services.openssh = {
+    enable = true;
+    settings.PermitRootLogin = "yes";
   };
 
   # ── Minimal system ─────────────────────────────────────────────
@@ -63,6 +129,8 @@ in {
 
   environment.systemPackages = with pkgs; [
     mullvad-browser
+    adwaita-icon-theme
+    wlr-randr
     vim
     htop
     curl
