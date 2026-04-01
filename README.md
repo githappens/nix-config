@@ -48,60 +48,22 @@ cp secrets/mullvad-wg.conf.example secrets/mullvad-wg.conf
 
 Paste your Mullvad config into `secrets/mullvad-wg.conf`. This file is gitignored and never leaves your machine.
 
-### Step 3: Create the Parallels VM
+### Step 3: Create and install
 
 ```bash
 ./scripts/manage-mullvad-vm.sh create
 ```
 
-This creates a Parallels VM (2 CPU, 2GB RAM, 15GB disk) and attaches the NixOS ISO.
+This will:
+1. Create a Parallels VM (4 CPU, 8GB RAM, 15GB disk, no mic/camera)
+2. Boot the NixOS installer ISO
+3. Auto-detect the VM IP and install NixOS via nixos-anywhere
+4. Generate an SSH deploy key (stored in `secrets/vm-ssh-key`, gitignored)
+5. Disconnect the ISO and boot from disk
 
-### Step 4: Boot the ISO and prepare for install
+The only manual step is setting `sudo passwd` in the VM console when prompted (NixOS installer requires this before SSH access). If the disk isn't `/dev/sda`, update `disko/mullvad-vm.nix` before running create.
 
-```bash
-prlctl start mullvad-vm
-```
-
-Once the NixOS installer boots to a shell:
-
-```bash
-# Set a root password (needed for SSH from the host)
-passwd
-
-# Find the VM's IP address
-ip addr show enp0s5
-```
-
-### Step 5: Verify the disk device name
-
-Still inside the VM console:
-
-```bash
-lsblk
-```
-
-If the 15GB disk is `/dev/sda`, you're good (that's what the disko config expects). If it's something else (e.g., `/dev/vda`), update the `device` field in `disko/mullvad-vm.nix` before proceeding.
-
-### Step 6: Install NixOS
-
-From the host terminal:
-
-```bash
-./scripts/manage-mullvad-vm.sh install <vm-ip>
-```
-
-This runs `nixos-anywhere` which partitions the disk, installs NixOS, and deploys the WireGuard secret. Takes ~5-10 minutes on first install.
-
-### Step 7: Post-install
-
-After the VM reboots, disconnect the ISO so it boots from disk:
-
-```bash
-prlctl set mullvad-vm --device-set cdrom0 --disconnect
-prlctl restart mullvad-vm
-```
-
-### Step 8: Verify
+### Step 4: Verify
 
 The VM should boot into Mullvad Browser fullscreen. Navigate to https://mullvad.net/en/check — it should show your Mullvad exit IP, not your real IP.
 

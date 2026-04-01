@@ -107,6 +107,21 @@ in {
     initialPassword = "changeme";
   };
 
+  # Fix ownership of SSH authorized_keys deployed via --extra-files
+  system.activationScripts.fix-ssh-keys = ''
+    if [ -d /home/user/.ssh ]; then
+      chown -R user:users /home/user/.ssh
+    fi
+  '';
+
+  # Passwordless sudo for remote updates via SSH key
+  security.sudo.extraRules = [{
+    users = [ "user" ];
+    commands = [
+      { command = "ALL"; options = [ "NOPASSWD" ]; }
+    ];
+  }];
+
   # ── Firewall ────────────────────────────────────────────────────
   networking.firewall = {
     enable = true;
@@ -115,10 +130,13 @@ in {
     trustedInterfaces = [ "wg0" ];
   };
 
-  # ── SSH (for remote nixos-rebuild) ──────────────────────────────
+  # ── SSH (key-only, for remote nixos-rebuild) ─────────────────────
   services.openssh = {
     enable = true;
-    settings.PermitRootLogin = "yes";
+    settings = {
+      PermitRootLogin = "no";
+      PasswordAuthentication = false;
+    };
   };
 
   # ── Minimal system ─────────────────────────────────────────────

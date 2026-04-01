@@ -10,7 +10,15 @@
     };
   };
 
-  outputs = { self, nixpkgs, disko, ... }: {
+  outputs = { self, nixpkgs, disko, ... }:
+
+  let
+    hostPkgs = nixpkgs.legacyPackages.aarch64-darwin;
+  in {
+
+    devShells.aarch64-darwin.default = hostPkgs.mkShell {
+      packages = with hostPkgs; [ git openssh ];
+    };
 
     nixosConfigurations.mullvad-vm = nixpkgs.lib.nixosSystem {
       system = "aarch64-linux";
