@@ -267,21 +267,15 @@ update_vm() {
   echo ""
   update_browser || true
 
-  # Step 3: Disable rollback so changes persist, then start VM
+  # Step 3: Stop VM, disable rollback so changes persist, then start
   echo ""
   echo "==> Disabling rollback mode for update..."
+  prlctl stop "$VM_NAME" --kill 2>/dev/null || true
   prlctl set "$VM_NAME" --undo-disks off
 
-  # Start VM if not running
-  local vm_status
-  vm_status=$(prlctl list "$VM_NAME" --full --json 2>/dev/null \
-    | grep -o '"status":[ ]*"[^"]*"' | head -1 \
-    | sed 's/.*"status":[ ]*"\([^"]*\)".*/\1/') || true
-  if [ "$vm_status" != "running" ]; then
-    echo "==> Starting VM..."
-    prlctl start "$VM_NAME"
-    sleep 10
-  fi
+  echo "==> Starting VM..."
+  prlctl start "$VM_NAME"
+  sleep 10
 
   local vm_ip
   vm_ip=$(resolve_vm_ip "${1:-}")
