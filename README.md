@@ -50,7 +50,7 @@ Download the **NixOS minimal ISO for aarch64-linux** from https://nixos.org/down
 mkdir -p ~/ISOs
 # Download the aarch64 minimal ISO — check the NixOS site for the current URL
 curl -L -o ~/ISOs/nixos-minimal-aarch64-linux.iso \
-  https://channels.nixos.org/nixos-25.05/latest-nixos-minimal-aarch64-linux.iso
+  https://channels.nixos.org/nixos-25.11/latest-nixos-minimal-aarch64-linux.iso
 ```
 
 ### Step 4: Set up your Mullvad WireGuard config
