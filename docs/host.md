@@ -32,7 +32,7 @@ Insert your YubiKey, then run the bootstrap. First run installs nix-darwin itsel
 sudo nix run nix-darwin -- switch --flake .#host
 ```
 
-> **Note:** System activation requires root. Run this from an admin account, or use `sudo` if your user has admin privileges.
+> **Note:** System activation requires root. If your account has admin privileges, `sudo` is enough. If you use a separate admin account, see [Split build/activate](#split-buildactivate-separate-admin-account) below.
 
 This installs and configures:
 - gnupg with YubiKey support (scdaemon)
@@ -42,7 +42,7 @@ This installs and configures:
 After this, `darwin-rebuild` is available for future updates:
 
 ```bash
-darwin-rebuild switch --flake .#host
+sudo darwin-rebuild switch --flake .#host
 ```
 
 ## Step 4: Initialize YubiKey and extract SSH public key
@@ -73,6 +73,28 @@ The host is now ready to provision VMs:
 ```bash
 sudo darwin-rebuild switch --flake .#host
 ```
+
+If using a separate admin account, follow the [split build/activate](#split-buildactivate-separate-admin-account) flow instead.
+
+## Split build/activate (separate admin account)
+
+If your regular account can't `sudo` and you use a dedicated admin account, split the process: build as your regular user (who owns the repo), then activate as the admin.
+
+**Build** (as your regular user):
+
+```bash
+nix build .#darwinConfigurations.host.system --print-out-paths --no-link
+# prints a store path, e.g. /nix/store/...-darwin-system
+```
+
+**Activate** (as admin user — paste the store path from above):
+
+```bash
+sudo nix-env -p /nix/var/nix/profiles/system --set /nix/store/...-darwin-system
+sudo /nix/store/...-darwin-system/activate
+```
+
+This avoids git ownership issues — the nix store is world-readable, so root can access the built result without needing to read the git repo.
 
 ## What this config provides
 
