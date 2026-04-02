@@ -4,7 +4,7 @@
 {
   networking.hostName = "m5pro";
 
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nix.enable = false;  # Nix is managed by Determinate installer
 
   users.users.bence = {
     home = "/Users/bence";

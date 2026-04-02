@@ -12,7 +12,7 @@
 
   programs.zsh = {
     enable = true;
-    initExtra = ''
+    initContent = ''
       # GPG-agent as SSH agent (YubiKey SSH for VM provisioning)
       export GPG_TTY=$(tty)
       export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)

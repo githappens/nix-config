@@ -34,7 +34,7 @@
       rescanau = "killall -9 AudioComponentRegistrar; auval -al";
     };
 
-    initExtra = ''
+    initContent = ''
       # GPG-agent as SSH agent
       export GPG_TTY=$(tty)
       export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
