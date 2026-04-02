@@ -29,8 +29,10 @@ cd ~/Developer/DevOps/nix-config
 Insert your YubiKey, then run the bootstrap. First run installs nix-darwin itself — no prior installation needed:
 
 ```bash
-nix run nix-darwin -- switch --flake .#host
+sudo nix run nix-darwin -- switch --flake .#host
 ```
+
+> **Note:** System activation requires root. Run this from an admin account, or use `sudo` if your user has admin privileges.
 
 This installs and configures:
 - gnupg with YubiKey support (scdaemon)
@@ -69,7 +71,7 @@ The host is now ready to provision VMs:
 ## Updating
 
 ```bash
-darwin-rebuild switch --flake .#host
+sudo darwin-rebuild switch --flake .#host
 ```
 
 ## What this config provides
