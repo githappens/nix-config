@@ -26,14 +26,19 @@ CPUS=4
 ISO="${NIXOS_ISO:-$HOME/ISOs/nixos-minimal-aarch64-linux.iso}"
 FLAKE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BROWSER_PKG="$FLAKE_DIR/pkgs/mullvad-browser.nix"
-SSH_KEY="$FLAKE_DIR/secrets/vm-ssh-key"
+SSH_PUBKEY="$FLAKE_DIR/secrets/yubikey-ssh.pub"
 VM_IP="${MULLVAD_VM_IP:-}"
 
-ensure_ssh_key() {
-  if [ ! -f "$SSH_KEY" ]; then
-    echo "==> Generating SSH key for VM access..."
-    ssh-keygen -t ed25519 -f "$SSH_KEY" -N "" -C "mullvad-vm-deploy"
-    echo "    Created $SSH_KEY"
+ensure_ssh_pubkey() {
+  if [ ! -f "$SSH_PUBKEY" ]; then
+    echo "==> Extracting YubiKey SSH public key..."
+    if ! ssh-add -L > "$SSH_PUBKEY" 2>/dev/null || [ ! -s "$SSH_PUBKEY" ]; then
+      rm -f "$SSH_PUBKEY"
+      echo "ERROR: No SSH keys found in agent. Is your YubiKey inserted and gpg-agent running?"
+      echo "Try: gpg --card-status && ssh-add -L"
+      exit 1
+    fi
+    echo "    Saved to $SSH_PUBKEY"
   fi
 }
 
@@ -45,7 +50,7 @@ wait_for_ssh() {
   echo "==> Waiting for SSH at $ip..."
   while [ $attempt -lt $max_attempts ]; do
     if ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        -o BatchMode=yes root@"$ip" true 2>/dev/null; then
+        -o BatchMode=yes -o IdentitiesOnly=yes root@"$ip" true 2>/dev/null; then
       echo "    SSH is up."
       return 0
     fi
@@ -92,7 +97,7 @@ create_vm() {
     exit 1
   fi
 
-  ensure_ssh_key
+  ensure_ssh_pubkey
 
   prlctl create "$VM_NAME" -o linux --no-hdd
   prlctl set "$VM_NAME" --device-add hdd --size "$DISK"
@@ -139,7 +144,7 @@ install_nixos() {
     exit 1
   fi
 
-  ensure_ssh_key
+  ensure_ssh_pubkey
 
   # Prepare extra-files tree
   local extra_files
@@ -150,7 +155,7 @@ install_nixos() {
   chmod 600 "$extra_files/etc/mullvad-wg/wg0.conf"
 
   mkdir -p "$extra_files/home/user/.ssh"
-  cp "${SSH_KEY}.pub" "$extra_files/home/user/.ssh/authorized_keys"
+  cp "$SSH_PUBKEY" "$extra_files/home/user/.ssh/authorized_keys"
   chmod 700 "$extra_files/home/user/.ssh"
   chmod 600 "$extra_files/home/user/.ssh/authorized_keys"
 
@@ -253,7 +258,7 @@ resolve_vm_ip() {
 }
 
 update_vm() {
-  ensure_ssh_key
+  ensure_ssh_pubkey
 
   echo "==> Updating Mullvad VM"
   echo ""
@@ -282,7 +287,7 @@ update_vm() {
 
   # Step 4: Deploy to VM
   echo "==> Deploying to VM at $vm_ip..."
-  local ssh_opts="-i $SSH_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  local ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
   rsync -avz -e "ssh $ssh_opts" --exclude='.git' --exclude='secrets' \
     "$FLAKE_DIR/" "user@${vm_ip}:/tmp/nix-config/"

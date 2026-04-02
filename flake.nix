@@ -45,6 +45,14 @@
       ];
     };
 
+    darwinConfigurations.host = nix-darwin.lib.darwinSystem {
+      system = "aarch64-darwin";
+      modules = [
+        home-manager.darwinModules.home-manager
+        ./modules/host.nix
+      ];
+    };
+
     darwinConfigurations.devbox = nix-darwin.lib.darwinSystem {
       system = "aarch64-darwin";
       modules = [
