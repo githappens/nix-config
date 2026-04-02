@@ -80,21 +80,29 @@ If using a separate admin account, follow the [split build/activate](#split-buil
 
 If your regular account can't `sudo` and you use a dedicated admin account, split the process: build as your regular user (who owns the repo), then activate as the admin.
 
-**Build** (as your regular user):
+### 1. Build (as your regular user)
+
+From the repo directory (see Step 2):
 
 ```bash
-nix build .#darwinConfigurations.host.system --print-out-paths --no-link
-# prints a store path, e.g. /nix/store/...-darwin-system
+nix build .#darwinConfigurations.host.system
 ```
 
-**Activate** (as admin user — paste the store path from above):
+This creates a `./result` symlink pointing to the built store path.
+
+### 2. Activate (as admin user)
+
+Switch to your admin account, then run from the same repo directory:
 
 ```bash
-sudo nix-env -p /nix/var/nix/profiles/system --set /nix/store/...-darwin-system
-sudo /nix/store/...-darwin-system/activate
+store_path=$(readlink result)
+sudo nix-env -p /nix/var/nix/profiles/system --set "$store_path"
+sudo "$store_path/activate"
 ```
 
-This avoids git ownership issues — the nix store is world-readable, so root can access the built result without needing to read the git repo.
+The nix store is world-readable, so the admin user can access the built derivation without needing to read the git repo.
+
+> **Note:** Both steps are needed — `nix-env --set` updates the system profile (enables `darwin-rebuild --rollback`), `activate` applies the configuration.
 
 ## What this config provides
 
