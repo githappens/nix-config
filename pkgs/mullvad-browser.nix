@@ -1,4 +1,4 @@
-# Mullvad Browser 16.0a4 (alpha) — pre-built binary for aarch64-linux.
+# Mullvad Browser 16.0a5 (alpha) — pre-built binary for aarch64-linux.
 #
 # The alpha is based on Firefox Rapid Release (not ESR like stable).
 # The nixpkgs mullvad-browser package only supports x86_64-linux.
@@ -86,7 +86,7 @@ let
     ffmpeg_7
   ];
 
-  version = "16.0a4";
+  version = "16.0a5";
 
   policiesJson = writeText "policies.json" (builtins.toJSON {
     policies.DisableAppUpdate = true;
@@ -98,7 +98,7 @@ stdenv.mkDerivation {
 
   src = fetchurl {
     url = "https://cdn.mullvad.net/browser/${version}/mullvad-browser-linux-aarch64-${version}.tar.xz";
-    hash = "sha256-wzB6zz7g1IlUfvM9LlU1k3i6bf/hibUxB8xL1aLf6VY=";
+    hash = "sha256-BsAc6lN6OA6xPCqAiRNVgDsw497ILakMzLtpmcZJge4=";
   };
 
   nativeBuildInputs = [
