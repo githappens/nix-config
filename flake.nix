@@ -1,5 +1,5 @@
 {
-  description = "NixOS VM configurations";
+  description = "NixOS VM and macOS (nix-darwin) configurations";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
@@ -8,9 +8,19 @@
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    nix-darwin = {
+      url = "github:nix-darwin/nix-darwin/nix-darwin-25.11";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    home-manager = {
+      url = "github:nix-community/home-manager/release-25.11";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, disko, ... }:
+  outputs = { self, nixpkgs, disko, nix-darwin, home-manager, ... }:
 
   let
     hostPkgs = nixpkgs.legacyPackages.aarch64-darwin;
@@ -32,6 +42,14 @@
             (import ./overlays/mullvad-browser-aarch64.nix)
           ];
         }
+      ];
+    };
+
+    darwinConfigurations.devbox = nix-darwin.lib.darwinSystem {
+      system = "aarch64-darwin";
+      modules = [
+        home-manager.darwinModules.home-manager
+        ./modules/devbox.nix
       ];
     };
   };
