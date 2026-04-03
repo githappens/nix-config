@@ -4,7 +4,7 @@
 {
   networking.hostName = "devbox";
 
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nix.enable = false;  # Nix is managed by Determinate installer
 
   users.users.user = {
     home = "/Users/user";
@@ -22,6 +22,22 @@
     curl
     htop
   ];
+
+  # ── SSH (key-only) ──────────────────────────────────────────────
+  environment.etc."ssh/sshd_config.d/100-nix.conf".text = ''
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+  '';
+
+  # ── System defaults ────────────────────────────────────────────
+  system.defaults.NSGlobalDomain.AppleShowAllExtensions = true;
+  system.defaults.NSGlobalDomain.AppleShowAllFiles = true;
+  system.defaults.NSGlobalDomain.NSDocumentSaveNewDocumentsToCloud = false;
+  system.defaults.dock.autohide = true;
+  system.defaults.dock.show-recents = false;
+  system.defaults.finder.AppleShowAllExtensions = true;
+  system.defaults.finder.FXPreferredViewStyle = "clmv";
+  system.defaults.trackpad.Clicking = true;
 
   system.stateVersion = 5;
 }
