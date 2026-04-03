@@ -29,6 +29,8 @@
     KbdInteractiveAuthentication no
   '';
 
+  system.primaryUser = "user";
+
   # ── System defaults ────────────────────────────────────────────
   system.defaults.NSGlobalDomain.AppleShowAllExtensions = true;
   system.defaults.NSGlobalDomain.AppleShowAllFiles = true;
