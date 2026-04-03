@@ -10,14 +10,16 @@
 #   - Private SSH keys at ~/.ssh/id_ed25519 and ~/.ssh/id_rsa_BD
 #
 # Usage:
-#   ./scripts/provision-devbox.sh [<template-name>] [<vm-name>]
+#   ./scripts/provision-devbox.sh [<template-name>] [<vm-name>] [<vm-ip>]
 #
 #   Defaults: template = macOS-Tahoe-template, vm = dev-env
+#   If <vm-ip> is given, skips auto-detection.
 
 set -euo pipefail
 
 TEMPLATE="${1:-macOS-Tahoe-template}"
 VM_NAME="${2:-dev-env}"
+VM_IP="${3:-}"
 VM_USER="user"
 FLAKE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SSH_PUBKEY="$FLAKE_DIR/secrets/yubikey-ssh.pub"
@@ -43,6 +45,7 @@ get_vm_ip() {
 
   echo "==> Waiting for VM to get an IP address..." >&2
   while [ $attempt -lt $max_attempts ]; do
+    # Try Parallels' reported IP first
     ip=$(prlctl list "$VM_NAME" --full --json 2>/dev/null \
       | grep -o '"ip_configured":[ ]*"[^"]*"' \
       | head -1 \
@@ -52,11 +55,19 @@ get_vm_ip() {
       echo "$ip"
       return 0
     fi
+
     attempt=$((attempt + 1))
     sleep 3
   done
 
-  echo "ERROR: Could not determine VM IP after $((max_attempts * 3))s." >&2
+  echo "" >&2
+  echo "    Could not auto-detect IP. Check the VM console for the IP." >&2
+  read -rp "    Enter VM IP: " ip
+  if [ -n "$ip" ]; then
+    echo "$ip"
+    return 0
+  fi
+  echo "ERROR: No IP provided." >&2
   exit 1
 }
 
@@ -86,52 +97,62 @@ get_snapshot_id() {
     | tr -d '"' || true
 }
 
-# ── Preflight checks ─────────────────────────────────────────────
-
-if ! prlctl list --all | grep -q "$TEMPLATE"; then
-  echo "ERROR: Template '$TEMPLATE' not found in Parallels."
-  echo "Available VMs:"
-  prlctl list --all
-  exit 1
-fi
-
-if prlctl list --all | grep -q "$VM_NAME"; then
-  echo "ERROR: VM '$VM_NAME' already exists. Delete it first or choose a different name."
-  exit 1
-fi
+# ── Preflight ─────────────────────────────────────────────────────
 
 ensure_ssh_pubkey
 
-# ── Step 1: Clone template ───────────────────────────────────────
+if prlctl list --all 2>/dev/null | grep -q "$VM_NAME"; then
+  echo "==> VM '$VM_NAME' already exists, skipping clone/hardening."
+else
+  # ── Step 1: Clone template ─────────────────────────────────────
+  if ! prlctl list --all 2>/dev/null | grep -q "$TEMPLATE"; then
+    echo "ERROR: Template '$TEMPLATE' not found in Parallels."
+    echo "Available VMs:"
+    prlctl list --all
+    exit 1
+  fi
 
-echo "==> Cloning '$TEMPLATE' → '$VM_NAME'"
-prlctl clone "$TEMPLATE" --name "$VM_NAME"
+  echo "==> Cloning '$TEMPLATE' → '$VM_NAME'"
+  prlctl clone "$TEMPLATE" --name "$VM_NAME"
 
-# ── Step 2: Privacy hardening ────────────────────────────────────
+  # ── Step 2: Privacy hardening ──────────────────────────────────
+  echo "==> Applying privacy hardening..."
+  prlctl set "$VM_NAME" --isolate-vm on
+  prlctl set "$VM_NAME" --auto-share-camera off
+  prlctl set "$VM_NAME" --auto-share-bluetooth off 2>/dev/null || true
+  prlctl set "$VM_NAME" --auto-share-smart-card off 2>/dev/null || true
+  prlctl set "$VM_NAME" --shared-clipboard off
+  prlctl set "$VM_NAME" --shared-cloud off
+  prlctl set "$VM_NAME" --sh-app-host-to-guest off
+  prlctl set "$VM_NAME" --sh-app-guest-to-host off
+  prlctl set "$VM_NAME" --shared-profile off
+  prlctl set "$VM_NAME" --sync-host-printers off
 
-echo "==> Applying privacy hardening..."
-prlctl set "$VM_NAME" --isolate-vm on
-prlctl set "$VM_NAME" --auto-share-camera off
-prlctl set "$VM_NAME" --auto-share-bluetooth off 2>/dev/null || true
-prlctl set "$VM_NAME" --auto-share-smart-card off 2>/dev/null || true
-prlctl set "$VM_NAME" --shared-clipboard off
-prlctl set "$VM_NAME" --shared-cloud off
-prlctl set "$VM_NAME" --sh-app-host-to-guest off
-prlctl set "$VM_NAME" --sh-app-guest-to-host off
-prlctl set "$VM_NAME" --shared-profile off
-prlctl set "$VM_NAME" --sync-host-printers off
+  # ── Step 3: Shared folder ──────────────────────────────────────
+  echo "==> Adding shared folder: ~/Work → /Volumes/Work"
+  prlctl set "$VM_NAME" --shf-host-add Work --path "$HOME/Work" --enable
+fi
 
-# ── Step 3: Shared folder ────────────────────────────────────────
+# ── Step 4: Start (if not running) and wait for SSH ──────────────
 
-echo "==> Adding shared folder: ~/Work → /Volumes/Work"
-prlctl set "$VM_NAME" --shf-host-add Work --path "$HOME/Work" --enable
+vm_status=$(prlctl list "$VM_NAME" --full --json 2>/dev/null \
+  | grep -o '"status":[ ]*"[^"]*"' \
+  | head -1 \
+  | sed 's/.*"status":[ ]*"\([^"]*\)".*/\1/') || true
 
-# ── Step 4: Start and wait for SSH ───────────────────────────────
+if [ "$vm_status" != "running" ]; then
+  echo "==> Starting VM..."
+  prlctl start "$VM_NAME"
+else
+  echo "==> VM already running."
+fi
 
-echo "==> Starting VM..."
-prlctl start "$VM_NAME"
-
-vm_ip=$(get_vm_ip)
+if [ -n "$VM_IP" ]; then
+  vm_ip="$VM_IP"
+  echo "    Using provided IP: $vm_ip"
+else
+  vm_ip=$(get_vm_ip)
+fi
 wait_for_ssh "$vm_ip"
 
 # Symlink shared folder
