@@ -164,7 +164,7 @@ echo "==> Deploying nix-darwin config..."
 rsync -avz -e "ssh $SSH_OPTS" --exclude='.git' --exclude='secrets' \
   "$FLAKE_DIR/" "$VM_USER@${vm_ip}:/tmp/nix-config/"
 
-ssh $SSH_OPTS "$VM_USER@$vm_ip" \
+ssh $SSH_OPTS -t "$VM_USER@$vm_ip" \
   "sudo nix run nix-darwin -- switch --flake /tmp/nix-config#devbox && rm -rf /tmp/nix-config"
 
 # ── Step 6: Copy private SSH keys ────────────────────────────────
