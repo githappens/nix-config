@@ -115,7 +115,7 @@ rsync -avz --exclude='.git' --exclude='secrets' \
 
 # Bootstrap nix-darwin with the devbox config
 ssh user@<devbox-ip> \
-  "nix run nix-darwin -- switch --flake /tmp/nix-config#devbox && rm -rf /tmp/nix-config"
+  "sudo nix run nix-darwin -- switch --flake /tmp/nix-config#devbox && rm -rf /tmp/nix-config"
 ```
 
 ### Step 5: Copy private SSH keys
@@ -156,7 +156,7 @@ rsync -avz --exclude='.git' --exclude='secrets' \
   . user@<devbox-ip>:/tmp/nix-config/
 
 ssh user@<devbox-ip> \
-  "darwin-rebuild switch --flake /tmp/nix-config#devbox && rm -rf /tmp/nix-config"
+  "sudo darwin-rebuild switch --flake /tmp/nix-config#devbox && rm -rf /tmp/nix-config"
 ```
 
 Then re-snapshot if you want the update to persist across rollbacks:
