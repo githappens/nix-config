@@ -33,11 +33,51 @@ Create a new macOS VM from the IPSW. Go through the macOS setup assistant:
 - Skip Apple ID sign-in
 - Set a password (you'll use SSH keys going forward)
 
-### 3. Enable Remote Login (SSH)
+Install Parallels Tools when prompted (or via Devices > Install Parallels Tools).
+
+### 3. macOS settings (in the VM GUI)
+
+These can't be managed by nix-darwin — do them once in the template.
+
+**Security / access:**
+- System Settings > Users & Groups > Automatic Login > select `user`
+- Passwordless sudo (in Terminal):
+  ```bash
+  sudo visudo -f /etc/sudoers.d/nopasswd
+  # Add: user ALL=(ALL) NOPASSWD: ALL
+  ```
+
+**Privacy / noise reduction:**
+- System Settings > Siri & Spotlight > disable Siri
+- System Settings > Siri & Spotlight > Spotlight > disable web/Siri suggestions
+- System Settings > Privacy & Security > Analytics & Improvements > disable all
+- System Settings > Privacy & Security > Apple Advertising > disable Personalized Ads
+- System Settings > General > Software Update > Automatic Updates > disable all
+
+**Power / display:**
+- System Settings > Lock Screen > set all timers to Never
+- System Settings > Displays > disable True Tone (if available)
+
+**Liquid Glass (macOS 26.0.x only):**
+```bash
+defaults write -g com.apple.SwiftUI.DisableSolarium -bool YES
+```
+> This flag was removed in macOS 26.1+. On newer versions, use System Settings > Accessibility > Display > Reduce Transparency and System Settings > Appearance > Liquid Glass > Tinted.
+
+**Remove bloatware** (frees ~5GB):
+```bash
+sudo rm -rf /Applications/GarageBand.app
+sudo rm -rf /Applications/iMovie.app
+sudo rm -rf /Applications/Keynote.app
+sudo rm -rf /Applications/Pages.app
+sudo rm -rf /Applications/Numbers.app
+```
+
+### 4. Enable Remote Login (SSH)
 
 System Settings > General > Sharing > Remote Login > enable for `user`
 
-### 4. Add YubiKey SSH public key
+### 5. Add YubiKey SSH public key
 
 From the host:
 
@@ -51,7 +91,7 @@ Verify you can SSH in without a password:
 ssh user@<template-vm-ip>
 ```
 
-### 5. Install Nix in the template
+### 6. Install Nix in the template
 
 SSH into the template VM and install Nix:
 
@@ -59,80 +99,31 @@ SSH into the template VM and install Nix:
 curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
 ```
 
-### 6. Shut down and keep as template
+### 7. Snapshot and shut down
 
 ```bash
 prlctl stop <template-vm-name>
+prlctl snapshot <template-vm-name> --name "base" --description "Clean macOS Tahoe with Nix, SSH, auto-login configured."
 ```
 
 Do not enable rollback mode on the template — it's a base image, not a running VM.
 
 ## Provisioning a devbox from the template
 
-### Step 1: Clone the template
+The provisioning script automates: clone, privacy hardening, shared folder, nix-darwin deploy, SSH key copy, snapshot with rollback.
 
 ```bash
-prlctl clone <template-vm-name> --name devbox
+./scripts/provision-devbox.sh [<template-name>] [<vm-name>] [<vm-ip>]
 ```
 
-### Step 2: Privacy hardening
+Defaults: `macOS-Tahoe-template` and `dev-env`. The script is idempotent — if the VM already exists it skips clone/hardening and re-deploys config.
+
+Examples:
 
 ```bash
-prlctl set devbox --isolate-vm on
-prlctl set devbox --auto-share-camera off
-prlctl set devbox --shared-clipboard off
-prlctl set devbox --shared-cloud off
-prlctl set devbox --sh-app-host-to-guest off
-prlctl set devbox --sh-app-guest-to-host off
-prlctl set devbox --shared-profile off
-prlctl set devbox --sync-host-printers off
-```
-
-### Step 3: Add shared folder
-
-```bash
-prlctl set devbox --shf-host-add Work --path "$HOME/Work" --enable
-```
-
-In the VM, this mounts at `/Volumes/Work` (or configure Parallels to mount elsewhere). Symlink it:
-
-```bash
-ssh user@<devbox-ip> "ln -sf /Volumes/Work ~/Work"
-```
-
-### Step 4: Start and deploy config
-
-```bash
-prlctl start devbox
-```
-
-Wait for SSH, then deploy:
-
-```bash
-# Copy the repo into the VM
-rsync -avz --exclude='.git' --exclude='secrets' \
-  . user@<devbox-ip>:/tmp/nix-config/
-
-# Bootstrap nix-darwin with the devbox config
-ssh user@<devbox-ip> \
-  "sudo nix run nix-darwin -- switch --flake /tmp/nix-config#devbox && rm -rf /tmp/nix-config"
-```
-
-### Step 5: Copy private SSH keys
-
-```bash
-scp ~/.ssh/id_ed25519 user@<devbox-ip>:~/.ssh/id_ed25519
-scp ~/.ssh/id_rsa_BD user@<devbox-ip>:~/.ssh/id_rsa_BD
-ssh user@<devbox-ip> "chmod 600 ~/.ssh/id_ed25519 ~/.ssh/id_rsa_BD"
-```
-
-### Step 6: Snapshot and enable rollback
-
-```bash
-prlctl stop devbox
-prlctl snapshot devbox --name "clean" --description "Post-provision baseline."
-prlctl set devbox --undo-disks discard
-prlctl start devbox
+./scripts/provision-devbox.sh                                          # defaults
+./scripts/provision-devbox.sh macOS-Tahoe-template staging             # custom name
+./scripts/provision-devbox.sh macOS-Tahoe-template dev-env 10.211.55.5 # manual IP
 ```
 
 ## Persistence model
